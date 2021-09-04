@@ -3,11 +3,14 @@ import time
 from approxeng.input.selectbinder import ControllerResource
 from struct import *
 import ctypes
+import os
 
 HOVER_SERIAL_BAUD = 115200
 START_FRAME = 0xABCD
-TIME_SEND = 0.1  # 100ms
+TIME_SEND = 0.08  # 100ms
 SPEED_MAX_TEST = 300
+
+speed_limit = SPEED_MAX_TEST
 
 
 def Send(serial_port, uSteer, uSpeed):
@@ -41,6 +44,22 @@ def map_value(nFrom, nTo, nFrom2, nTo2, nValue):
     return float(nTo - nFrom) * (float(nValue - nFrom2) / float(nTo2 - nFrom2)) + nFrom
 
 
+def increase_speed_factor():
+    """ Increase speed limit upwards but limited to a MAX value """
+    global speed_limit
+    speed_limit += 50
+    if speed_limit > SPEED_MAX_TEST:
+        speed_limit = SPEED_MAX_TEST
+
+
+def decrease_speed_factor():
+    """ Decrease the max speed downwards to a min limit. """
+    global speed_limit
+    speed_limit -= 50
+    if speed_limit < 0:
+        speed_limit = 0
+
+
 # Create a serial port over UART
 port = serial.Serial("/dev/ttyS0", baudrate=HOVER_SERIAL_BAUD, timeout=1.0)
 while True:
@@ -50,12 +69,28 @@ while True:
             print('Found a joystick and connected')
             while joystick.connected:
                 # Do stuff with your joystick here!
+                joystick.check_presses()
+
+                if 'start' in joystick.presses:
+                    # Options button pn PS4
+                    # Call system OS to shut down the Pi
+                    print("Shutting Down Pi\n")
+                    os.system("sudo shutdown -h now")
+
+                if 'home' in joystick.presses:
+                    pass
+
+                # Increase or Decrease motor speed factor
+                if 'r1' in joystick.presses:
+                    increase_speed_factor()
+                if 'l1' in joystick.presses:
+                    decrease_speed_factor()
 
                 # Get a corrected value for the left stick x-axis
                 ly, rx = joystick['ly','rx']
 
-                speed = int(map_value(-300, 300, -1.0, 1.0, ly))
-                steering = int(map_value(-300, 300, -1.0, 1.0, rx))
+                speed = int(map_value(-speed_limit, speed_limit, -1.0, 1.0, ly))
+                steering = int(map_value(-speed_limit, speed_limit, -1.0, 1.0, rx))
 
                 # Send the values to the hoverboard
                 Send(port, steering, speed)
@@ -67,4 +102,4 @@ while True:
     except IOError:
         # No joystick found, wait for a bit before trying again
         print('Unable to find any joysticks')
-        sleep(1.0)
+        time.sleep(1.0)
